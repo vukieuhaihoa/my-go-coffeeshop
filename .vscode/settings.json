@@ -1,0 +1,18 @@
+{
+  "[go]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[go.mod]": {
+    "editor.formatOnSave": true
+  },
+  "gopls": {
+    "usePlaceholders": true
+  },
+  "go.lintTool": "golangci-lint",
+  "go.lintOnSave": "package",
+  "go.testFlags": ["-race", "-count=1", "-v"],
+  "go.coverMode": "atomic"
+}
