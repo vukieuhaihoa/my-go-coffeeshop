@@ -7,15 +7,19 @@ run-product:
 build-product:
 	go build -o bin/product ./cmd/product
 
-.PHONY: tidy lint fmt
+.PHONY: tidy lint fmt test
 tidy:
 	go mod tidy
 
 lint:
 	golangci-lint run ./...
 
+# chạy gofumpt và goimports theo .golangci.yml
 fmt:
-	go fmt ./...
+	golangci-lint fmt ./...    
+
+test:
+	go test -race -cover ./...
 
 .PHONY: compose-up compose-down
 compose-up:
