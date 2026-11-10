@@ -27,7 +27,7 @@ var _ Logger = (*SlogLogger)(nil)
 func NewSlogLogger(w io.Writer, level string) (*SlogLogger, error) {
 	lvl, err := parseLevel(level)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse log level: %w", err)
 	}
 	slogger := slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: lvl}))
 	return &SlogLogger{
