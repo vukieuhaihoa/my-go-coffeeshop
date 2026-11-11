@@ -1,0 +1,11 @@
+.git
+.env
+bin/
+notes/
+*.out
+
+
+.vscode/
+docs/
+docker-compose.yml
+mise.toml
