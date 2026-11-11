@@ -7,22 +7,32 @@ run-product:
 build-product:
 	go build -o bin/product ./cmd/product
 
-.PHONY: tidy lint fmt
+.PHONY: tidy lint fmt test
 tidy:
 	go mod tidy
 
 lint:
 	golangci-lint run ./...
 
+# chạy gofumpt và goimports theo .golangci.yml
 fmt:
-	go fmt ./...
+	golangci-lint fmt ./...
 
-.PHONY: compose-up compose-down
+test:
+	go test -race -cover ./...
+
+.PHONY: compose-up compose-down docker-build-product docker-compose-logs
 compose-up:
 	docker compose up -d
 
 compose-down:
 	docker compose down --remove-orphans
+
+docker-build-product:
+	docker compose build product
+
+docker-compose-logs:
+	docker compose logs -f product
 
 .PHONY: clean
 clean:

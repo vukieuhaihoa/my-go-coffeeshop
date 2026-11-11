@@ -2,15 +2,25 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/vukieuhaihoa/my-go-coffeeshop/cmd/product/config"
+	"github.com/vukieuhaihoa/my-go-coffeeshop/internal/product/app"
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatalf("Application error: %v", err)
+	}
+}
+
+func run() error {
 	defaultConfigPath := "config.yml"
 	if p := os.Getenv("CONFIG_PATH"); p != "" {
 		defaultConfigPath = p
@@ -21,10 +31,16 @@ func main() {
 
 	cfg, err := config.NewConfig(*configPath)
 	if err != nil {
-		log.Fatalf("Failed to create config: %v", err)
+		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	fmt.Printf("Hello from %s version %s\n", cfg.Name, cfg.Version)
-	fmt.Printf("This service is running on %s:%s\n", cfg.Host, cfg.Port)
-	fmt.Printf("Log level is set to %s\n", cfg.Level)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
+
+	return app.Run(ctx, cfg)
 }
