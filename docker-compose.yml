@@ -14,6 +14,21 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql
 
+  product:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.product
+    image: my-go-coffeeshop-product
+    environment:
+      APP_NAME: product-service-in-docker
+      LOG_LEVEL: debug
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stop_grace_period: 10s
+    
 volumes:
   postgres_data:
 

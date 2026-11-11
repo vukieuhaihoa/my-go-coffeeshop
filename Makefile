@@ -16,17 +16,23 @@ lint:
 
 # chạy gofumpt và goimports theo .golangci.yml
 fmt:
-	golangci-lint fmt ./...    
+	golangci-lint fmt ./...
 
 test:
 	go test -race -cover ./...
 
-.PHONY: compose-up compose-down
+.PHONY: compose-up compose-down docker-build-product docker-compose-logs
 compose-up:
 	docker compose up -d
 
 compose-down:
 	docker compose down --remove-orphans
+
+docker-build-product:
+	docker compose build product
+
+docker-compose-logs:
+	docker compose logs -f product
 
 .PHONY: clean
 clean:
