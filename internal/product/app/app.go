@@ -45,7 +45,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(cfg.Host, cfg.Port),
-		Handler:           h.Routes(),
+		Handler:           logRequests(log, h.Routes()),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      shutdownTimeout,
