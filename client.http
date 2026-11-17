@@ -1,0 +1,10 @@
+@host = http://localhost:5001
+
+### Danh sách món
+GET {{host}}/v1/api/item-types
+
+### Tra theo loại
+GET {{host}}/v1/api/items-by-types/CAPPUCCINO,LATTE
+
+### Loại không tồn tại
+GET {{host}}/v1/api/items-by-types/PHO

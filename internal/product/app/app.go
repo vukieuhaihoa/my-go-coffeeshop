@@ -3,12 +3,15 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/vukieuhaihoa/my-go-coffeeshop/cmd/product/config"
+	"github.com/vukieuhaihoa/my-go-coffeeshop/internal/product/httpapi"
 	"github.com/vukieuhaihoa/my-go-coffeeshop/pkg/logger"
 )
 
@@ -17,14 +20,14 @@ const (
 	shutdownTimeout = 5 * time.Second
 )
 
-// Run starts the application with the provided context and configuration.
-// It initializes the logger, starts the heartbeat goroutine, and waits for a shutdown signal.
+// Run starts the product service application with the provided context and configuration.
+// It initializes the logger, sets up the HTTP server, and handles graceful shutdown on context cancellation.
 // Parameters:
-//   - ctx: The context to control the application's lifecycle.
-//   - cfg: The configuration for the application.
+//   - ctx: The context for managing the application's lifecycle.
+//   - cfg: The configuration for the product service.
 //
 // Returns:
-//   - An error if the application fails to run or shuts down with an error.
+//   - An error if the application fails to start or encounters an issue during execution.
 func Run(ctx context.Context, cfg *config.Config) error {
 	log, err := logger.NewSlogLogger(os.Stdout, cfg.Level)
 	if err != nil {
@@ -38,45 +41,48 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		"http_port", cfg.Port,
 	)
 
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		heartbeat(ctx, log, 2*time.Second)
-	})
+	h := httpapi.NewHandler(log)
 
-	<-ctx.Done()
-	log.Info("shutting down", "reason", context.Cause(ctx))
+	srv := &http.Server{
+		Addr:              net.JoinHostPort(cfg.Host, cfg.Port),
+		Handler:           logRequests(log, h.Routes()),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      shutdownTimeout,
+		IdleTimeout:       120 * time.Second,
+	}
+	ln, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		return err
+	}
 
-	done := make(chan struct{})
+	serveErr := make(chan error, 1)
 	go func() {
-		wg.Wait()
-		close(done)
+		log.Info("HTTP server is listening", "address", srv.Addr)
+		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- err
+		}
+		close(serveErr)
 	}()
+
+	select {
+	case err, ok := <-serveErr:
+		if !ok {
+			return errors.New("server stopped unexpectedly")
+		}
+		return fmt.Errorf("http server: %w", err)
+	case <-ctx.Done():
+		log.Info("shutting down", "reason", context.Cause(ctx))
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
-	select {
-	case <-done:
-	case <-shutdownCtx.Done():
-		log.Warn("shutdown timeout exceeded, forcing exit")
-		return fmt.Errorf("shutdown: %w", shutdownCtx.Err())
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		_ = srv.Close() // Force close if shutdown fails
+		return fmt.Errorf("shutdown HTTP server: %w", err)
 	}
 
 	log.Info("bye")
 	return nil
-}
-
-func heartbeat(ctx context.Context, log logger.Logger, every time.Duration) {
-	ticker := time.NewTicker(every)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Info("heartbeat stopped")
-			return
-		case t := <-ticker.C:
-			log.Debug("heartbeat", "at", t.Format(time.TimeOnly))
-		}
-	}
 }
