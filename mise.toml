@@ -1,3 +1,5 @@
 [tools]
+buf = "1.75.0"
 go = "1.27.3"
 golangci-lint = "2.15.0"
+grpcurl = "1.9.4"
