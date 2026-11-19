@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package coffeeshop.product.v1;
+
+import "google/api/annotations.proto";
+
+// ProductService cung cấp menu của quán.
+service ProductService {
+  // GetItemTypes trả về toàn bộ menu.
+  rpc GetItemTypes(GetItemTypesRequest) returns (GetItemTypesResponse) {
+    option (google.api.http) = {get: "/v1/api/item-types"};
+  }
+
+  // GetItemsByType trả về các món theo loại.
+  // API này nhận vào một chuỗi các loại món ăn, phân tách bằng dấu phẩy.
+  // Mục đích là để lấy thông tin như type, price.
+  rpc GetItemsByType(GetItemsByTypeRequest) returns (GetItemsByTypeResponse) {
+    option (google.api.http) = {get: "/v1/api/items-by-types/{item_types}"};
+  }
+}
+
+message GetItemTypesRequest {}
+
+message GetItemTypesResponse {
+  repeated ItemType item_types = 1;
+}
+
+message ItemType {
+  string name = 1;
+  int32 type = 2;
+  double price = 3;
+  string image = 4;
+}
+
+message GetItemsByTypeRequest {
+  string item_types = 1;
+}
+
+message GetItemsByTypeResponse {
+  repeated Item items = 1;
+}
+
+message Item {
+  int32 type = 1;
+  double price = 2;
+}

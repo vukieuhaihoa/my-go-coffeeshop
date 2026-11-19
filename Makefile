@@ -37,3 +37,16 @@ docker-compose-logs:
 .PHONY: clean
 clean:
 	rm -rf bin
+
+.PHONY: proto-fmt proto-lint proto-gen proto-breaking
+proto-fmt:
+	buf format -w
+
+proto-lint:
+	buf lint
+
+proto-gen:
+	buf generate
+
+proto-breaking:
+	buf breaking --against '.git#branch=main'
