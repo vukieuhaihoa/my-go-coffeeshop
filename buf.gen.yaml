@@ -1,0 +1,18 @@
+version: v2
+clean: true                     # xóa thư mục out trước khi sinh, không sót file cũ
+managed:
+  enabled: true
+  disable:
+    - module: buf.build/googleapis/googleapis   # code Go của googleapis đã có sẵn, đừng ghi đè go_package của nó
+  override:
+    - file_option: go_package_prefix
+      value: github.com/vukieuhaihoa/my-go-coffeeshop/gen/go
+plugins:
+  - local: ["go", "tool", "protoc-gen-go"]
+    out: gen/go
+    opt: paths=source_relative
+  - local: ["go", "tool", "protoc-gen-go-grpc"]
+    out: gen/go
+    opt: paths=source_relative
+  - local: ["go", "tool", "protoc-gen-openapiv2"]
+    out: gen/openapi
