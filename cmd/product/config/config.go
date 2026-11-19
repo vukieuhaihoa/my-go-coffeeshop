@@ -11,7 +11,7 @@ type (
 	// Config holds the configuration for the product service.
 	Config struct {
 		App  `yaml:"app"`
-		HTTP `yaml:"http"`
+		GRPC `yaml:"grpc"`
 		Log  `yaml:"logger"`
 	}
 
@@ -21,10 +21,10 @@ type (
 		Version string `yaml:"version" env:"APP_VERSION" env-default:"1.0.0" env-description:"The version of the application"`
 	}
 
-	// HTTP holds the HTTP server configuration.
-	HTTP struct {
-		Host string `yaml:"host" env:"HTTP_HOST" env-default:"0.0.0.0" env-description:"The host of the HTTP server"`
-		Port string `env-required:"true" yaml:"port" env:"HTTP_PORT" env-description:"The port of the HTTP server"`
+	// GRPC holds the gRPC server configuration.
+	GRPC struct {
+		Host string `yaml:"host" env:"GRPC_HOST" env-default:"0.0.0.0" env-description:"The host of the gRPC server"`
+		Port string `env-required:"true" yaml:"port" env:"GRPC_PORT" env-description:"The port of the gRPC server"`
 	}
 
 	// Log holds the logging configuration.

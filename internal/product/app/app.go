@@ -6,12 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"os"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
+
 	"github.com/vukieuhaihoa/my-go-coffeeshop/cmd/product/config"
-	"github.com/vukieuhaihoa/my-go-coffeeshop/internal/product/httpapi"
+	productv1 "github.com/vukieuhaihoa/my-go-coffeeshop/gen/go/coffeeshop/product/v1"
+	"github.com/vukieuhaihoa/my-go-coffeeshop/internal/product/catalog"
+	"github.com/vukieuhaihoa/my-go-coffeeshop/internal/product/grpcapi"
 	"github.com/vukieuhaihoa/my-go-coffeeshop/pkg/logger"
 )
 
@@ -21,68 +27,90 @@ const (
 )
 
 // Run starts the product service application with the provided context and configuration.
-// It initializes the logger, sets up the HTTP server, and handles graceful shutdown on context cancellation.
+// It initializes the logger and logs the service start information.
 // Parameters:
 //   - ctx: The context for managing the application's lifecycle.
 //   - cfg: The configuration for the product service.
 //
 // Returns:
-//   - An error if the application fails to start or encounters an issue during execution.
+//   - An error if the gRPC server fails to start or encounters an issue during execution.
 func Run(ctx context.Context, cfg *config.Config) error {
 	log, err := logger.NewSlogLogger(os.Stdout, cfg.Level)
 	if err != nil {
 		return err
 	}
 
-	log.Info("service started",
+	log.Info("service starting",
 		"app_name", cfg.Name,
 		"app_version", cfg.Version,
-		"http_host", cfg.Host,
-		"http_port", cfg.Port,
+		"grpc_host", cfg.Host,
+		"grpc_port", cfg.Port,
 	)
 
-	h := httpapi.NewHandler(log)
-
-	srv := &http.Server{
-		Addr:              net.JoinHostPort(cfg.Host, cfg.Port),
-		Handler:           logRequests(log, h.Routes()),
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      shutdownTimeout,
-		IdleTimeout:       120 * time.Second,
-	}
-	ln, err := net.Listen("tcp", srv.Addr)
+	addr := net.JoinHostPort(cfg.Host, cfg.Port)
+	lis, err := net.Listen("tcp", addr)
 	if err != nil {
-		return err
+		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
+
+	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(logUnary(log), recoverUnary(log)))
+	productv1.RegisterProductServiceServer(srv, grpcapi.NewServer(catalog.New()))
+
+	// ① Health: cho người khác hỏi "còn làm việc được không?"
+	hs := health.NewServer()
+	healthpb.RegisterHealthServer(srv, hs)
+	hs.SetServingStatus(
+		productv1.ProductService_ServiceDesc.ServiceName,
+		healthpb.HealthCheckResponse_SERVING,
+	)
+
+	// ② Reflection: cho người khác hỏi "có những API nào?"
+	reflection.Register(srv)
 
 	serveErr := make(chan error, 1)
 	go func() {
-		log.Info("HTTP server is listening", "address", srv.Addr)
-		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
-			serveErr <- err
-		}
-		close(serveErr)
+		serveErr <- srv.Serve(lis)
 	}()
+	log.Info("gRPC server is listening", "address", lis.Addr().String())
+
+	var serveFailure error
 
 	select {
-	case err, ok := <-serveErr:
-		if !ok {
-			return errors.New("server stopped unexpectedly")
-		}
-		return fmt.Errorf("http server: %w", err)
+	case err := <-serveErr:
+		serveFailure = fmt.Errorf("grpc serve: %w", err)
+		log.Error("gRPC server stopped with error", "error", err)
 	case <-ctx.Done():
 		log.Info("shutting down", "reason", context.Cause(ctx))
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
+	// ③ Báo "tôi sắp nghỉ" TRƯỚC khi bắt đầu tắt
+	hs.Shutdown()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		_ = srv.Close() // Force close if shutdown fails
-		return fmt.Errorf("shutdown HTTP server: %w", err)
+	if err := gracefulStop(srv, shutdownTimeout); err != nil {
+		return errors.Join(serveFailure, err)
+	}
+
+	if serveFailure != nil {
+		return serveFailure
 	}
 
 	log.Info("bye")
 	return nil
+}
+
+func gracefulStop(srv *grpc.Server, d time.Duration) error {
+	done := make(chan struct{})
+	go func() {
+		srv.GracefulStop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-time.After(d):
+		srv.Stop()
+		<-done
+		return fmt.Errorf("gRPC server stop time out after %s", d)
+	}
 }
