@@ -69,4 +69,9 @@ func TestAllReturnsCopy(t *testing.T) {
 	if &itemTypes1[0] == &itemTypes2[0] {
 		t.Error("expected All() to return a copy, but got the same reference")
 	}
+
+	itemTypes1[0].Name = "CHANGED"
+	if catalog.All()[0].Name != "CAPPUCCINO" {
+		t.Errorf("expected item type name 'CAPPUCCINO', got '%s'", catalog.All()[0].Name)
+	}
 }
