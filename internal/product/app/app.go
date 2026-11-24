@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -26,34 +26,37 @@ const (
 	shutdownTimeout = 5 * time.Second
 )
 
-// Run starts the product service application with the provided context and configuration.
-// It initializes the logger and logs the service start information.
+// App represents the main application for the product service.
+type App struct {
+	cfg *config.Config
+	log logger.Logger
+}
+
+// New creates a new instance of the App with the provided configuration and logger.
 // Parameters:
-//   - ctx: The context for managing the application's lifecycle.
 //   - cfg: The configuration for the product service.
+//   - log: The logger to be used for logging within the application.
 //
 // Returns:
-//   - An error if the gRPC server fails to start or encounters an issue during execution.
-func Run(ctx context.Context, cfg *config.Config) error {
-	log, err := logger.NewSlogLogger(os.Stdout, cfg.Level)
-	if err != nil {
-		return err
+//   - A pointer to an App instance.
+func New(cfg *config.Config, log logger.Logger) *App {
+	return &App{
+		cfg: cfg,
+		log: log,
 	}
+}
 
-	log.Info("service starting",
-		"app_name", cfg.Name,
-		"app_version", cfg.Version,
-		"grpc_host", cfg.Host,
-		"grpc_port", cfg.Port,
-	)
-
-	addr := net.JoinHostPort(cfg.Host, cfg.Port)
-	lis, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("listen on %s: %w", addr, err)
-	}
-
-	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(logUnary(log), recoverUnary(log)))
+// Run starts the gRPC server and handles graceful shutdown on receiving termination signals.
+// Parameters:
+//   - ctx: The context for managing the application's lifecycle.
+//   - lis: The network listener for the gRPC server.
+//
+// Returns:
+//   - An error if there was an issue running the application.
+func (app *App) Run(ctx context.Context, lis net.Listener) error {
+	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(
+		logUnary(app.log),
+		recoverUnary(app.log)))
 	productv1.RegisterProductServiceServer(srv, grpcapi.NewServer(catalog.New()))
 
 	// ① Health: cho người khác hỏi "còn làm việc được không?"
@@ -67,34 +70,33 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	// ② Reflection: cho người khác hỏi "có những API nào?"
 	reflection.Register(srv)
 
-	serveErr := make(chan error, 1)
-	go func() {
-		serveErr <- srv.Serve(lis)
-	}()
-	log.Info("gRPC server is listening", "address", lis.Addr().String())
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		app.log.Info("gRPC server is listening",
+			"address", lis.Addr().String(),
+			"app", app.cfg.Name,
+			"version", app.cfg.Version,
+		)
+		if err := srv.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			return fmt.Errorf("gRPC server serve: %w", err)
+		}
+		return nil
+	})
 
-	var serveFailure error
+	g.Go(func() error {
+		<-gctx.Done()
+		app.log.Info("shutting down", "reason", context.Cause(gctx))
 
-	select {
-	case err := <-serveErr:
-		serveFailure = fmt.Errorf("grpc serve: %w", err)
-		log.Error("gRPC server stopped with error", "error", err)
-	case <-ctx.Done():
-		log.Info("shutting down", "reason", context.Cause(ctx))
+		// ③ Báo "tôi sắp nghỉ" TRƯỚC khi bắt đầu tắt
+		hs.Shutdown()
+		return gracefulStop(srv, shutdownTimeout)
+	})
+
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("application run: %w", err)
 	}
 
-	// ③ Báo "tôi sắp nghỉ" TRƯỚC khi bắt đầu tắt
-	hs.Shutdown()
-
-	if err := gracefulStop(srv, shutdownTimeout); err != nil {
-		return errors.Join(serveFailure, err)
-	}
-
-	if serveFailure != nil {
-		return serveFailure
-	}
-
-	log.Info("bye")
+	app.log.Info("bye")
 	return nil
 }
 
