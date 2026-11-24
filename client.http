@@ -1,4 +1,10 @@
-@host = http://localhost:5001
+@host = http://localhost:5000
+
+
+### Preflight CORS từ frontend (cổng 8888)
+OPTIONS {{host}}/v1/api/item-types
+Origin: http://localhost:8888
+Access-Control-Request-Method: GET
 
 ### Danh sách món
 GET {{host}}/v1/api/item-types
