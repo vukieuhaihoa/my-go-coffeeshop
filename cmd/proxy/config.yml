@@ -1,0 +1,17 @@
+app:
+  name: proxy-service
+  version: 1.0.0
+
+http:
+  host: 0.0.0.0
+  port: 5000
+
+upstream:
+  product_addr: localhost:5001
+
+cors:
+  allowed_origins:
+    - http://localhost:8888
+
+logger:
+  log_level: debug

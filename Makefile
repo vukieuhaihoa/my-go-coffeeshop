@@ -1,11 +1,18 @@
 CONFIG_PATH ?= cmd/product/config.yml
+PROXY_CONFIG_PATH ?= cmd/proxy/config.yml
 
-.PHONY: run-product build-product
+.PHONY: run-product build-product run-proxy build-proxy
 run-product:
 	go run ./cmd/product/ -config $(CONFIG_PATH)
 
 build-product:
 	go build -o bin/product ./cmd/product
+
+run-proxy:
+	go run ./cmd/proxy/ -config $(PROXY_CONFIG_PATH)
+
+build-proxy:
+	go build -o bin/proxy ./cmd/proxy
 
 .PHONY: tidy lint fmt test
 tidy:

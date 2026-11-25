@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -52,34 +53,49 @@ func TestRecoverUnary(t *testing.T) {
 }
 
 func TestLogUnary(t *testing.T) {
-	info := &grpc.UnaryServerInfo{
-		FullMethod: "/coffeeshop.product.v1.ProductService/GetItemTypes",
+	tests := []struct {
+		name     string
+		err      error
+		wantCode string
+	}{
+		{"OK", nil, "code=OK"},
+		{"InvalidArgument", status.Error(codes.InvalidArgument, "invalid argument"), "code=InvalidArgument"},
+		{"Unknown", errors.New("unknown error"), "code=Unknown"},
 	}
 
-	var buf bytes.Buffer
-	log, err := logger.NewSlogLogger(&buf, "DEBUG")
-	if err != nil {
-		t.Fatalf("failed to create logger: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			log, err := logger.NewSlogLogger(&buf, "DEBUG")
+			if err != nil {
+				t.Fatalf("failed to create logger: %v", err)
+			}
+			info := &grpc.UnaryServerInfo{
+				FullMethod: "/coffeeshop.product.v1.ProductService/GetItemTypes",
+			}
 
-	successful := func(context.Context, any) (any, error) {
-		return "success", nil
-	}
+			handler := func(context.Context, any) (any, error) {
+				return "resp", tt.err
+			}
 
-	interceptor := logUnary(log)
-	_, err = interceptor(context.Background(), nil, info, successful)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
+			resp, err := logUnary(log)(context.Background(), nil, info, handler)
+			if !errors.Is(err, tt.err) {
+				t.Errorf("expected error %v, got %v", tt.err, err)
+			}
+			if resp != "resp" && tt.err == nil {
+				t.Errorf("expected response to be 'resp', got %v", resp)
+			}
 
-	logOutput := buf.String()
-	if !bytes.Contains([]byte(logOutput), []byte("rpc")) {
-		t.Errorf("expected log output to contain 'rpc', got %s", logOutput)
-	}
-	if !bytes.Contains([]byte(logOutput), []byte(info.FullMethod)) {
-		t.Errorf("expected log output to contain method name, got %s", logOutput)
-	}
-	if !bytes.Contains([]byte(logOutput), []byte(codes.OK.String())) {
-		t.Errorf("expected log output to contain code OK, got %s", logOutput)
+			logOutput := buf.String()
+			if !bytes.Contains([]byte(logOutput), []byte("msg=rpc")) {
+				t.Errorf("expected log output to contain 'msg=rpc', got %s", logOutput)
+			}
+			if !bytes.Contains([]byte(logOutput), []byte("method="+info.FullMethod)) {
+				t.Errorf("expected log output to contain method name, got %s", logOutput)
+			}
+			if !bytes.Contains([]byte(logOutput), []byte(tt.wantCode)) {
+				t.Errorf("expected log output to contain '%s', got %s", tt.wantCode, logOutput)
+			}
+		})
 	}
 }

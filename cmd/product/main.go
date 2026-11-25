@@ -6,12 +6,14 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/vukieuhaihoa/my-go-coffeeshop/cmd/product/config"
 	"github.com/vukieuhaihoa/my-go-coffeeshop/internal/product/app"
+	"github.com/vukieuhaihoa/my-go-coffeeshop/pkg/logger"
 )
 
 func main() {
@@ -34,6 +36,16 @@ func run() error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
+	lg, err := logger.NewSlogLogger(os.Stdout, cfg.Level)
+	if err != nil {
+		return fmt.Errorf("failed to initialize logger: %w", err)
+	}
+
+	lis, err := net.Listen("tcp", net.JoinHostPort(cfg.Host, cfg.Port))
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s:%s: %w", cfg.Host, cfg.Port, err)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -42,5 +54,5 @@ func run() error {
 		stop()
 	}()
 
-	return app.Run(ctx, cfg)
+	return app.New(cfg, lg).Run(ctx, lis)
 }
